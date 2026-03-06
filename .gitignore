@@ -65,3 +65,6 @@ downloads/
 
 # Cursor / agent (optional)
 .cursor/
+
+# Local dev context (generated/summary for AI and future dev)
+dev-context.md

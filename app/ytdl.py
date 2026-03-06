@@ -88,7 +88,6 @@ def _convert_srt_to_txt_file(subtitle_path: str):
                 lines = lines[1:]
             if lines and "-->" in lines[0]:
                 lines = lines[1:]
-
             text_lines = []
             for line in lines:
                 if "-->" in line:
@@ -284,9 +283,6 @@ class Download:
         await self.notifier.updated(self.info)
         self.status_task = asyncio.create_task(self.update_status())
         await self.loop.run_in_executor(None, self.proc.join)
-        # Signal update_status to stop and wait for it to finish
-        # so that all status updates (including MoveFiles with correct
-        # file size) are processed before _post_download_cleanup runs.
         if self.status_queue is not None:
             self.status_queue.put(None)
         await self.status_task
@@ -329,8 +325,6 @@ class Download:
             if 'filename' in status:
                 fileName = status.get('filename')
                 rel_name = os.path.relpath(fileName, self.download_dir)
-                # For captions mode, ignore media-like placeholders and let subtitle_file
-                # statuses define the final file shown in the UI.
                 if self.info.format == 'captions':
                     requested_subtitle_format = str(getattr(self.info, 'subtitle_format', '')).lower()
                     allowed_caption_exts = ('.txt',) if requested_subtitle_format == 'txt' else ('.vtt', '.srt', '.sbv', '.scc', '.ttml', '.dfxp')
@@ -341,7 +335,6 @@ class Download:
                 if self.info.format == 'thumbnail':
                     self.info.filename = re.sub(r'\.webm$', '.jpg', self.info.filename)
 
-            # Handle chapter files
             log.debug(f"Update status for {self.info.title}: {status}")
             if 'chapter_file' in status:
                 chapter_file = status.get('chapter_file')
@@ -349,11 +342,9 @@ class Download:
                     self.info.chapter_files = []
                 rel_path = os.path.relpath(chapter_file, self.download_dir)
                 file_size = os.path.getsize(chapter_file) if os.path.exists(chapter_file) else None
-                #Postprocessor hook called multiple times with chapters. Only insert if not already present.
                 existing = next((cf for cf in self.info.chapter_files if cf['filename'] == rel_path), None)
                 if not existing:
                     self.info.chapter_files.append({'filename': rel_path, 'size': file_size})
-                # Skip the rest of status processing for chapter files
                 continue
 
             if 'subtitle_file' in status:
@@ -362,7 +353,6 @@ class Download:
                     continue
                 subtitle_output_file = subtitle_file
 
-                # txt mode is derived from SRT by stripping cue metadata.
                 if self.info.format == 'captions' and str(getattr(self.info, 'subtitle_format', '')).lower() == 'txt':
                     converted_txt = _convert_srt_to_txt_file(subtitle_file)
                     if converted_txt:
@@ -378,7 +368,6 @@ class Download:
                 existing = next((sf for sf in self.info.subtitle_files if sf['filename'] == rel_path), None)
                 if not existing:
                     self.info.subtitle_files.append({'filename': rel_path, 'size': file_size})
-                # Prefer first subtitle file as the primary result link in captions mode.
                 if self.info.format == 'captions' and (
                     not getattr(self.info, 'filename', None) or
                     str(getattr(self.info, 'subtitle_format', '')).lower() == 'txt'
@@ -448,7 +437,6 @@ class PersistentQueue:
         return not bool(self.dict)
 
     def repair(self):
-        # check DB format
         type_check = subprocess.run(
             ["file", self.path],
             capture_output=True,
@@ -456,17 +444,13 @@ class PersistentQueue:
         )
         db_type = type_check.stdout.lower()
 
-        # create backup (<queue>.old)
         try:
             shutil.copy2(self.path, f"{self.path}.old")
         except Exception as e:
-            # if we cannot backup then its not safe to attempt a repair
-            #  since it could be due to a filesystem error
             log.debug(f"PersistentQueue:{self.identifier} backup failed, skipping repair")
             return
 
         if "gnu dbm" in db_type:
-            # perform gdbm repair
             log_prefix = f"PersistentQueue:{self.identifier} repair (dbm/file)"
             log.debug(f"{log_prefix} started")
             try:
@@ -483,7 +467,6 @@ class PersistentQueue:
             except FileNotFoundError:
                 log.debug(f"{log_prefix} failed: 'gdbmtool' was not found")
 
-            # perform null key cleanup
             log_prefix = f"PersistentQueue:{self.identifier} repair (null keys)"
             log.debug(f"{log_prefix} started")
             deleted = 0
@@ -499,7 +482,6 @@ class PersistentQueue:
                 log.debug(f"{log_prefix} failed: db type is dbm.gnu, but the module is not available (dbm.error; module support may be missing or the file may be corrupted)")
 
         elif "sqlite" in db_type:
-            # perform sqlite3 recovery
             log_prefix = f"PersistentQueue:{self.identifier} repair (sqlite3/file)"
             log.debug(f"{log_prefix} started")
             try:
@@ -529,7 +511,7 @@ class DownloadQueue:
         self.semaphore = asyncio.Semaphore(int(self.config.MAX_CONCURRENT_DOWNLOADS))
         self.done.load()
         self._add_generation = 0
-        self._canceled_urls = set()  # URLs canceled during current playlist add
+        self._canceled_urls = set()
 
     def cancel_add(self):
         self._add_generation += 1
@@ -614,7 +596,6 @@ class DownloadQueue:
         output = self.config.OUTPUT_TEMPLATE if len(dl.custom_name_prefix) == 0 else f'{dl.custom_name_prefix}.{self.config.OUTPUT_TEMPLATE}'
         output_chapter = self.config.OUTPUT_TEMPLATE_CHAPTER
         entry = getattr(dl, 'entry', None)
-        # Skip playlist template if skip_playlist_template is set (for album downloads where folder is already organized)
         if entry is not None and entry.get('playlist_index') is not None and not getattr(dl, 'skip_playlist_template', False):
             if len(self.config.OUTPUT_TEMPLATE_PLAYLIST):
                 output = self.config.OUTPUT_TEMPLATE_PLAYLIST
@@ -691,7 +672,6 @@ class DownloadQueue:
         elif etype == 'playlist' or etype == 'channel':
             log.debug(f'Processing as a {etype}')
             entries = entry['entries']
-            # Convert generator to list if needed (for len() and slicing operations)
             if isinstance(entries, types.GeneratorType):
                 entries = list(entries)
             log.info(f'{etype} detected with {len(entries)} entries')
@@ -738,11 +718,8 @@ class DownloadQueue:
                 log.info(f'Skipping canceled URL: {entry.get("title") or key}')
                 return {'status': 'ok'}
             if not self.queue.exists(key):
-                # Check if this is an album download (folder contains artist/album structure)
-                # For album downloads, skip the playlist template to avoid extra folder nesting
                 skip_playlist_template = False
                 if folder and '/' in folder:
-                    # If folder is already organized (e.g., "ArtistName/AlbumName"), skip playlist template
                     skip_playlist_template = True
                 
                 dl = DownloadInfo(
@@ -832,7 +809,6 @@ class DownloadQueue:
 
     async def cancel(self, ids):
         for id in ids:
-            # Track URL so playlist add loop won't re-queue it
             self._canceled_urls.add(id)
             if self.pending.exists(id):
                 self.pending.delete(id)

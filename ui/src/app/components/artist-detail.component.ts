@@ -95,7 +95,6 @@ import { EditAlbumModalComponent } from './edit-album-modal.component';
             <p class="mt-3 text-muted">Loading...</p>
           </div>
         } @else if (selectedAlbum) {
-          <!-- Album Detail View (wrapper allows flex + scroll) -->
           <div class="artist-detail-body">
             <app-album-detail 
               [album]="selectedAlbum"
@@ -105,7 +104,6 @@ import { EditAlbumModalComponent } from './edit-album-modal.component';
           </div>
         } @else {
           <div class="artist-detail-scroll">
-          <!-- Albums Section -->
           <div class="section">
             <h3 class="section-title">
               <fa-icon [icon]="faFolder" class="me-2" />
@@ -147,7 +145,6 @@ import { EditAlbumModalComponent } from './edit-album-modal.component';
             }
           </div>
 
-          <!-- Singles Section -->
           <div class="section">
             <h3 class="section-title">
               <fa-icon [icon]="faMusic" class="me-2" />
@@ -425,14 +422,12 @@ export class ArtistDetailComponent implements OnInit, OnChanges {
   @Output() downloadSingle = new EventEmitter<void>();
 
   ngOnInit() {
-    // Subscribe to artist selection changes
     this.musicService.artistSelected.subscribe(artist => {
       if (artist) {
         this.loadArtistDetails(artist.id);
       }
     });
 
-    // Subscribe to download updates to track progress
     this.downloadsService.updated.subscribe(() => {
       this.cdr.markForCheck();
     });
@@ -446,7 +441,6 @@ export class ArtistDetailComponent implements OnInit, OnChanges {
       return null;
     }
 
-    // Find downloads for this artist by checking folder path
     let totalPercent = 0;
     let activeCount = 0;
     let status = '';
@@ -479,7 +473,6 @@ export class ArtistDetailComponent implements OnInit, OnChanges {
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['artist'] && this.artist) {
-      // Reset selected album when artist changes
       this.selectedAlbum = null;
       this.loadArtistDetails(this.artist.id);
     }
@@ -520,14 +513,12 @@ export class ArtistDetailComponent implements OnInit, OnChanges {
 
   deleteAlbum(album: Album) {
     if (confirm(`Delete album "${album.name}"? This will remove all tracks in the album.`)) {
-      // TODO: Implement album deletion API endpoint
       console.log('Delete album:', album);
     }
   }
 
   deleteSingle(single: Single) {
     if (confirm(`Delete single "${single.name}"?`)) {
-      // TODO: Implement single deletion API endpoint
       console.log('Delete single:', single);
     }
   }
@@ -573,7 +564,6 @@ export class ArtistDetailComponent implements OnInit, OnChanges {
     );
   }
 
-  /** Called when album-detail changes (e.g. track deleted) so we refetch and keep UI in sync without showing loading spinner. */
   onAlbumContentChanged() {
     if (!this.artist) return;
     this.musicService.getArtistDetails(this.artist.id).subscribe({
@@ -601,20 +591,16 @@ export class ArtistDetailComponent implements OnInit, OnChanges {
     modalRef.result.then(
       (updatedArtist) => {
         if (updatedArtist) {
-          // Update the current artist and reload details
           this.artist = updatedArtist;
           this.musicService.artistSelected.next(updatedArtist);
           this.loadArtistDetails(updatedArtist.id);
         }
       },
-      () => {
-        // Modal dismissed
-      }
+      () => {}
     );
   }
 
   getSingleDisplayName(filename: string): string {
-    // Remove file extension for display (same as album tracks)
     return filename.replace(/\.[^/.]+$/, '');
   }
 
@@ -625,10 +611,7 @@ export class ArtistDetailComponent implements OnInit, OnChanges {
   }
 
   getSingleDownloadUrl(single: Single): string {
-    // Build download URL based on single path
-    // The backend serves audio files from /audio_download/
     const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
-    // Encode the path properly for URL
     const encodedPath = single.path.split('/').map(segment => encodeURIComponent(segment)).join('/');
     return `${baseUrl}audio_download/${encodedPath}`;
   }

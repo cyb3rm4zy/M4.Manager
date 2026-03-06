@@ -37,8 +37,6 @@ def parseLogLevel(logLevel):
         case _:
             return None
 
-# Configure logging before Config() uses it so early messages are not dropped.
-# Only configure if no handlers are set (avoid clobbering hosting app settings).
 if not logging.getLogger().hasHandlers():
     logging.basicConfig(level=parseLogLevel(os.environ.get('LOGLEVEL', 'INFO')) or logging.INFO)
 
@@ -94,7 +92,6 @@ class Config:
         if not self.URL_PREFIX.endswith('/'):
             self.URL_PREFIX += '/'
 
-        # Convert relative addresses to absolute addresses to prevent the failure of file address comparison
         if self.YTDL_OPTIONS_FILE and self.YTDL_OPTIONS_FILE.startswith('.'):
             self.YTDL_OPTIONS_FILE = str(Path(self.YTDL_OPTIONS_FILE).resolve())
 
@@ -132,24 +129,17 @@ class Config:
         return (True, '')
 
 config = Config()
-# Align root logger level with Config (keeps a single source of truth).
-# This re-applies the log level after Config loads, in case LOGLEVEL was
-# overridden by config file settings or differs from the environment variable.
 logging.getLogger().setLevel(parseLogLevel(str(config.LOGLEVEL)) or logging.INFO)
 
 class ObjectSerializer(json.JSONEncoder):
     def default(self, obj):
-        # First try to use __dict__ for custom objects
         if hasattr(obj, '__dict__'):
             return obj.__dict__
-        # Convert iterables (generators, dict_items, etc.) to lists
-        # Exclude strings and bytes which are also iterable
         elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
             try:
                 return list(obj)
             except:
                 pass
-        # Fall back to default behavior
         return json.JSONEncoder.default(self, obj)
 
 serializer = ObjectSerializer()
@@ -187,21 +177,17 @@ app.on_startup.append(lambda app: dqueue.initialize())
 
 class FileOpsFilter(DefaultFilter):
     def __call__(self, change_type: int, path: str) -> bool:
-        # Check if this path matches our YTDL_OPTIONS_FILE
         if path != config.YTDL_OPTIONS_FILE:
             return False
 
-        # For existing files, use samefile comparison to handle symlinks correctly
         if os.path.exists(config.YTDL_OPTIONS_FILE):
             try:
                 if not os.path.samefile(path, config.YTDL_OPTIONS_FILE):
                     return False
             except (OSError, IOError):
-                # If samefile fails, fall back to string comparison
                 if path != config.YTDL_OPTIONS_FILE:
                     return False
 
-        # Accept all change types for our file: modified, added, deleted
         return change_type in (Change.modified, Change.added, Change.deleted)
 
 def get_options_update_time(success=True, msg=''):
@@ -211,7 +197,6 @@ def get_options_update_time(success=True, msg=''):
         'update_time': None
     }
 
-    # Only try to get file modification time if YTDL_OPTIONS_FILE is set and file exists
     if config.YTDL_OPTIONS_FILE and os.path.exists(config.YTDL_OPTIONS_FILE):
         try:
             result['update_time'] = os.path.getmtime(config.YTDL_OPTIONS_FILE)
@@ -356,7 +341,6 @@ def get_custom_dirs():
     def recursive_dirs(base):
         path = pathlib.Path(base)
 
-        # Converts PosixPath object to string, and remove base/ prefix
         def convert(p):
             s = str(p)
             if s.startswith(base):
@@ -367,14 +351,12 @@ def get_custom_dirs():
 
             return s
 
-        # Include only directories which do not match the exclude filter
         def include_dir(d):
             if len(config.CUSTOM_DIRS_EXCLUDE_REGEX) == 0:
                 return True
             else:
                 return re.search(config.CUSTOM_DIRS_EXCLUDE_REGEX, d) is None
 
-        # Recursively lists all subdirectories of DOWNLOAD_DIR
         dirs = list(filter(include_dir, map(convert, path.glob('**/'))))
 
         return dirs
@@ -423,14 +405,10 @@ if config.URL_PREFIX != '/':
     def index_redirect_dir(request):
         return web.HTTPFound(config.URL_PREFIX)
 
-# Music Management API Endpoints
 def sanitize_folder_name(name: str) -> str:
     """Sanitize folder name to prevent path traversal and invalid characters."""
-    # Remove path separators and dangerous characters
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', name)
-    # Remove leading/trailing spaces and dots
     name = name.strip(' .')
-    # Replace multiple spaces with single space
     name = re.sub(r'\s+', ' ', name)
     return name
 
@@ -504,7 +482,6 @@ async def list_artists(request):
             os.makedirs(base, exist_ok=True)
         artists = []
         for item in os.listdir(base):
-            # Skip hidden directories and .metube state directory
             if item.startswith('.') or item == '.metube':
                 continue
             item_path = os.path.join(base, item)
@@ -538,7 +515,6 @@ async def create_artist(request):
         
         artist_path = get_artist_dir(safe_name)
         
-        # Check if artist already exists
         if os.path.exists(artist_path):
             return web.json_response({
                 'id': safe_name,
@@ -579,7 +555,6 @@ async def rename_artist(request):
         old_artist_path = get_artist_dir(artist_id)
         new_artist_path = get_artist_dir(safe_new_name)
         
-        # Security check: ensure paths are within music directory
         base = get_music_base_dir()
         real_old_path = os.path.realpath(old_artist_path)
         real_new_path = os.path.realpath(new_artist_path)
@@ -592,7 +567,6 @@ async def rename_artist(request):
         if os.path.exists(new_artist_path) and old_artist_path != new_artist_path:
             raise web.HTTPBadRequest(reason='An artist with this name already exists')
         
-        # Rename the folder
         if old_artist_path != new_artist_path:
             os.rename(old_artist_path, new_artist_path)
             log.info(f"Renamed artist folder from {old_artist_path} to {new_artist_path}")
@@ -665,7 +639,6 @@ async def delete_artist(request):
         artist_id = request.match_info['artist_id']
         artist_path = get_artist_dir(artist_id)
         
-        # Security check: ensure path is within music directory
         base = get_music_base_dir()
         real_artist_path = os.path.realpath(artist_path)
         if not real_artist_path.startswith(base):
@@ -694,11 +667,9 @@ async def delete_track(request):
         album_id = request.match_info['album_id']
         track_id = request.match_info['track_id']
         
-        # Build the track file path
         album_path = get_album_dir(artist_id, album_id)
         track_path = os.path.join(album_path, track_id)
         
-        # Security check: ensure path is within music directory
         base = get_music_base_dir()
         real_track_path = os.path.realpath(track_path)
         if not real_track_path.startswith(base):
@@ -729,7 +700,6 @@ async def get_artist_details(request):
         artist_id = request.match_info['artist_id']
         artist_path = get_artist_dir(artist_id)
         
-        # Security check
         base = get_music_base_dir()
         real_artist_path = os.path.realpath(artist_path)
         if not real_artist_path.startswith(base):
@@ -742,15 +712,12 @@ async def get_artist_details(request):
         singles_dir = get_singles_dir(artist_id)
         singles = []
         
-        # List all items in artist directory
         for item in os.listdir(artist_path):
-            # Skip hidden directories and .metube
             if item.startswith('.') or item == '.metube':
                 continue
             item_path = os.path.join(artist_path, item)
             if os.path.isdir(item_path):
                 if item == 'Singles':
-                    # List singles (mp3 only)
                     if os.path.exists(singles_dir):
                         for single_file in os.listdir(singles_dir):
                             if not single_file.lower().endswith('.mp3'):
@@ -765,7 +732,6 @@ async def get_artist_details(request):
                                     'size': file_size
                                 })
                 else:
-                    # It's an album (mp3 only)
                     tracks = []
                     for album_item in os.listdir(item_path):
                         if not album_item.lower().endswith('.mp3'):
@@ -817,28 +783,24 @@ async def download_album(request):
         if not artist_id or not album_name or not playlist_url:
             raise web.HTTPBadRequest(reason='artist_id, album_name, and playlist_url are required')
         
-        # Create album directory path
         album_dir_path = get_album_dir(artist_id, album_name)
         relative_folder = f"{artist_id}/{sanitize_folder_name(album_name)}"
         
-        # Ensure artist directory exists
         artist_path = get_artist_dir(artist_id)
         if not os.path.exists(artist_path):
             os.makedirs(artist_path, exist_ok=True)
         
-        # Create album directory
         os.makedirs(album_dir_path, exist_ok=True)
         
-        # Add download with folder path
         status = await dqueue.add(
             playlist_url,
-            'audio',  # Always use audio quality for music
-            'mp3',    # Default format
+            'audio',
+            'mp3',
             relative_folder,
-            '',  # No custom name prefix
-            0,   # No playlist item limit
-            True,  # Auto start
-            False,  # No chapter splitting
+            '',
+            0,
+            True,
+            False,
             config.OUTPUT_TEMPLATE_CHAPTER,
             'srt',
             'en',
@@ -863,28 +825,24 @@ async def download_single(request):
         if not artist_id or not video_url:
             raise web.HTTPBadRequest(reason='artist_id and video_url are required')
         
-        # Create singles directory path
         singles_dir_path = get_singles_dir(artist_id)
         relative_folder = f"{artist_id}/Singles"
         
-        # Ensure artist directory exists
         artist_path = get_artist_dir(artist_id)
         if not os.path.exists(artist_path):
             os.makedirs(artist_path, exist_ok=True)
         
-        # Create singles directory if it doesn't exist
         os.makedirs(singles_dir_path, exist_ok=True)
         
-        # Add download with folder path
         status = await dqueue.add(
             video_url,
-            'audio',  # Always use audio quality for music
-            'mp3',    # Default format
+            'audio',
+            'mp3',
             relative_folder,
-            '',  # No custom name prefix
-            0,   # No playlist item limit
-            True,  # Auto start
-            False,  # No chapter splitting
+            '',
+            0,
+            True,
+            False,
             config.OUTPUT_TEMPLATE_CHAPTER,
             'srt',
             'en',
@@ -903,7 +861,7 @@ async def get_accent_color(request):
     """Get the current accent color from config file."""
     try:
         config_file = os.path.join(config.STATE_DIR, 'accent-color.json')
-        default_color = '#0d6efd'  # Bootstrap's default blue
+        default_color = '#0d6efd'
         
         if os.path.exists(config_file):
             try:
@@ -926,11 +884,9 @@ async def set_accent_color(request):
         post = await request.json()
         color = post.get('color', '').strip()
         
-        # Validate hex color format
         if not color or not re.match(r'^#[0-9A-Fa-f]{6}$', color):
             raise web.HTTPBadRequest(reason='Invalid color format. Must be a hex color (e.g., #0d6efd)')
         
-        # Ensure STATE_DIR exists
         os.makedirs(config.STATE_DIR, exist_ok=True)
         
         config_file = os.path.join(config.STATE_DIR, 'accent-color.json')
@@ -956,7 +912,6 @@ async def get_file_tree(request):
         
         artists = []
         for artist_name in os.listdir(base):
-            # Skip hidden directories and .metube state directory
             if artist_name.startswith('.') or artist_name == '.metube':
                 continue
             artist_path = os.path.join(base, artist_name)
@@ -969,13 +924,11 @@ async def get_file_tree(request):
                 }
                 
                 for item in os.listdir(artist_path):
-                    # Skip hidden directories and .metube
                     if item.startswith('.') or item == '.metube':
                         continue
                     item_path = os.path.join(artist_path, item)
                     if os.path.isdir(item_path):
                         if item == 'Singles':
-                            # List singles (mp3 only)
                             for single_file in os.listdir(item_path):
                                 if not single_file.lower().endswith('.mp3'):
                                     continue
@@ -989,7 +942,6 @@ async def get_file_tree(request):
                                         'size': file_size
                                     })
                         else:
-                            # It's an album (mp3 only)
                             tracks = []
                             for track_file in os.listdir(item_path):
                                 if not track_file.lower().endswith('.mp3'):
@@ -1029,8 +981,6 @@ except ValueError as e:
         raise RuntimeError('Could not find the frontend UI static assets. Please run `node_modules/.bin/ng build` inside the ui folder') from e
     raise e
 
-# https://github.com/aio-libs/aiohttp/pull/4615 waiting for release
-# @routes.options(config.URL_PREFIX + 'add')
 async def add_cors(request):
     return web.Response(text=serializer.encode({"status": "ok"}))
 

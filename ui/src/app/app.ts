@@ -57,13 +57,11 @@ export class App implements OnInit {
     this.setTheme(this.activeTheme!);
     this.loadAccentColor();
 
-    // Subscribe to artist selection (e.g. from sidebar or home grid)
     this.musicService.artistSelected.subscribe(artist => {
       this.selectedArtist = artist;
       this.showHome = artist == null;
     });
 
-    // Subscribe to download updates to refresh artist details
     this.downloads.doneChanged.subscribe(() => {
       if (this.selectedArtist) {
         this.refreshArtistDetails();
@@ -86,23 +84,18 @@ export class App implements OnInit {
       },
       error: (error) => {
         console.error('Error loading accent color:', error);
-        // Use default Bootstrap blue
         this.applyAccentColor('#0d6efd');
       }
     });
   }
 
   applyAccentColor(color: string) {
-    // Set CSS custom property for accent color
     document.documentElement.style.setProperty('--bs-primary', color);
     document.documentElement.style.setProperty('--bs-primary-rgb', this.hexToRgb(color));
-    // Update favicon to match (music note in accent color)
     this.updateFavicon(color);
   }
 
-  /** Build SVG favicon (same music icon as navbar) with given fill color and return as data URL. */
   private getFaviconDataUrl(color: string): string {
-    // FontAwesome 6 free solid faMusic path (matches icon next to title/logo)
     const path = 'M468 7c7.6 6.1 12 15.3 12 25l0 304c0 44.2-43 80-96 80s-96-35.8-96-80 43-80 96-80c11.2 0 22 1.6 32 4.6l0-116.7-224 49.8 0 206.3c0 44.2-43 80-96 80s-96-35.8-96-80 43-80 96-80c11.2 0 22 1.6 32 4.6L128 96c0-15 10.4-28 25.1-31.2l288-64c9.5-2.1 19.4 .2 27 6.3z';
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="${color}" d="${path}"/></svg>`;
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
@@ -117,7 +110,7 @@ export class App implements OnInit {
 
   hexToRgb(hex: string): string {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) return '13, 110, 253'; // Default Bootstrap blue RGB
+    if (!result) return '13, 110, 253';
     
     const r = parseInt(result[1], 16);
     const g = parseInt(result[2], 16);
@@ -133,9 +126,7 @@ export class App implements OnInit {
           this.applyAccentColor(color);
         }
       },
-      () => {
-        // Modal dismissed
-      }
+      () => {}
     );
   }
 
@@ -171,9 +162,7 @@ export class App implements OnInit {
           this.musicService.artistSelected.next(artist);
         }
       },
-      () => {
-        // Modal dismissed
-      }
+      () => {}
     );
   }
 
@@ -197,12 +186,9 @@ export class App implements OnInit {
     modalRef.componentInstance.artistId = this.selectedArtist.id;
     modalRef.result.then(
       () => {
-        // Refresh artist details after download starts
         setTimeout(() => this.refreshArtistDetails(), 2000);
       },
-      () => {
-        // Modal dismissed
-      }
+      () => {}
     );
   }
 
@@ -213,12 +199,9 @@ export class App implements OnInit {
     modalRef.componentInstance.artistId = this.selectedArtist.id;
     modalRef.result.then(
       () => {
-        // Refresh artist details after download starts
         setTimeout(() => this.refreshArtistDetails(), 2000);
       },
-      () => {
-        // Modal dismissed
-      }
+      () => {}
     );
   }
 

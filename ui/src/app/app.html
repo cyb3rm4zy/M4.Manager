@@ -1,5 +1,4 @@
 <div class="app-container">
-  <!-- Header -->
   <nav class="navbar navbar-expand-md navbar-dark bg-dark">
     <div class="container-fluid">
       <button type="button" class="navbar-brand d-flex align-items-center border-0 bg-transparent text-white" (click)="goHome()" title="Home">
@@ -50,16 +49,13 @@
     </div>
   </nav>
 
-  <!-- Main Layout -->
   <div class="main-layout">
-    <!-- Sidebar -->
     <app-sidebar 
       [selectedArtist]="selectedArtist"
       (artistSelected)="onArtistSelected($event)"
       (addArtistClicked)="onAddArtist()">
     </app-sidebar>
 
-    <!-- Content Area -->
     <div class="content-area">
       @if (showHome) {
         <app-home (artistSelected)="onArtistSelected($event)" />

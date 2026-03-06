@@ -8,9 +8,7 @@ export interface Artist {
   id: string;
   name: string;
   path?: string;
-  /** Number of .mp3 files (from home/list API). */
   file_count?: number;
-  /** Total size in bytes (from home/list API). */
   total_size?: number;
   albums?: Album[];
   singles?: Single[];
@@ -47,12 +45,11 @@ export interface FileTree {
 })
 export class MusicService {
   private http = inject(HttpClient);
-  private baseUrl = 'api'; // Relative to current path, matches backend routes
-  
+  private baseUrl = 'api';
+
   artistsChanged = new Subject<Artist[]>();
   artistSelected = new Subject<Artist | null>();
 
-  // Artist Management
   getArtists(): Observable<Artist[]> {
     return this.http.get<Artist[]>(`${this.baseUrl}/artists`).pipe(
       catchError(error => {

@@ -30,6 +30,7 @@ ui/typings
 # Docs and dev-only (not needed in image)
 README-DEV.md
 README.metube.old
+dev-context.md
 .cursor
 
 # Local and secrets

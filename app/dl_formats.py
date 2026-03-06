@@ -34,32 +34,22 @@ def get_format(format: str, quality: str) -> str:
         return format[7:]
 
     if format == "thumbnail":
-        # Quality is irrelevant in this case since we skip the download
         return "bestaudio/best"
 
     if format == "captions":
-        # Quality is irrelevant in this case since we skip the download
         return "bestaudio/best"
 
     if format in AUDIO_FORMATS:
-        # Audio quality needs to be set post-download, set in opts
         return f"bestaudio[ext={format}]/bestaudio/best"
 
     if format in ("mp4", "any"):
         if quality == "audio":
             return "bestaudio/best"
-        # video {res} {vfmt} + audio {afmt} {res} {vfmt}
         vfmt, afmt = ("[ext=mp4]", "[ext=m4a]") if format == "mp4" else ("", "")
         vres = f"[height<={quality}]" if quality not in ("best", "best_ios", "worst") else ""
         vcombo = vres + vfmt
 
         if quality == "best_ios":
-            # iOS has strict requirements for video files, requiring h264 or h265
-            # video codec and aac audio codec in MP4 container. This format string
-            # attempts to get the fully compatible formats first, then the h264/h265
-            # video codec with any M4A audio codec (because audio is faster to
-            # convert if needed), and falls back to getting the best available MP4
-            # file.
             return f"bestvideo[vcodec~='^((he|a)vc|h26[45])']{vres}+bestaudio[acodec=aac]/bestvideo[vcodec~='^((he|a)vc|h26[45])']{vres}+bestaudio{afmt}/bestvideo{vcombo}+bestaudio{afmt}/best{vcombo}"
         return f"bestvideo{vcombo}+bestaudio{afmt}/best{vcombo}"
 
@@ -125,7 +115,6 @@ def get_opts(
         language = _normalize_subtitle_language(subtitle_language)
         opts["skip_download"] = True
         requested_subtitle_format = (subtitle_format or "srt").lower()
-        # txt is a derived, non-timed format produced from SRT after download.
         if requested_subtitle_format == "txt":
             requested_subtitle_format = "srt"
         opts["subtitlesformat"] = requested_subtitle_format
@@ -136,8 +125,6 @@ def get_opts(
         elif mode == "auto_only":
             opts["writesubtitles"] = False
             opts["writeautomaticsub"] = True
-            # `-orig` captures common YouTube auto-sub tags. The plain language
-            # fallback keeps behavior useful across other extractors.
             opts["subtitleslangs"] = [f"{language}-orig", language]
         elif mode == "prefer_auto":
             opts["writesubtitles"] = True
