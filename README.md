@@ -8,10 +8,10 @@ Forked from [MeTube](https://github.com/alexta69/metube).
 
 ## Run with Docker
 
-Image tags: `ermazy/m4-manager:latest` and `ermazy/m4-manager:0.1.0`.
+Image tags: `3rm4zy/m4.manager:latest` and `3rm4zy/m4.manager:0.1.0`.
 
 ```bash
-docker run -d -p 8081:8081 -v /path/to/music:/downloads ermazy/m4-manager:latest
+docker run -d -p 8081:8081 -v /path/to/music:/downloads 3rm4zy/m4.manager:latest
 ```
 
 Replace `/path/to/music` with your music directory.
@@ -20,9 +20,9 @@ Replace `/path/to/music` with your music directory.
 
 ```yaml
 services:
-  m4-manager:
-    image: ermazy/m4-manager:latest
-    container_name: m4-manager
+  m4.manager:
+    image: 3rm4zy/m4.manager:latest
+    container_name: m4.manager
     restart: unless-stopped
     ports:
       - "8081:8081"
@@ -100,18 +100,6 @@ location /m4-manager/ {
 ```
 
 Set in the container: `URL_PREFIX=/m4-manager/` (with trailing slash).
-
----
-
-## Build and push (Docker Hub)
-
-From the repo root, build and tag as both `latest` and `0.1.0`, then push:
-
-```bash
-docker build -t ermazy/m4-manager:latest -t ermazy/m4-manager:0.1.0 .
-docker push ermazy/m4-manager:latest
-docker push ermazy/m4-manager:0.1.0
-```
 
 ---
 
