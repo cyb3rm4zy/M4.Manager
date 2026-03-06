@@ -1,0 +1,15 @@
+# Replace YOUR_ORG with your GitHub org/user (or use a Docker Hub image).
+services:
+  m4-manager:
+    image: ghcr.io/YOUR_ORG/m4-manager:latest
+    container_name: m4-manager
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./downloads:/downloads
+    environment:
+      - PUID=1000
+      - PGID=1000
+      # Optional: DOWNLOAD_DIR=/downloads (default in image)
+      # Optional: LOGLEVEL=INFO

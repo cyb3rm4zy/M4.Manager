@@ -18,10 +18,10 @@ if [ `id -u` -eq 0 ] && [ `id -g` -eq 0 ]; then
     fi
     echo "Starting BgUtils POT Provider"
     gosu "${PUID}":"${PGID}" bgutil-pot server >/tmp/bgutil-pot.log 2>&1 &
-    echo "Running MeTube as user ${PUID}:${PGID}"
+    echo "Running M4.Manager as user ${PUID}:${PGID}"
     exec gosu "${PUID}":"${PGID}" python3 app/main.py
 else
-    echo "User set by docker; running MeTube as `id -u`:`id -g`"
+    echo "User set by docker; running M4.Manager as `id -u`:`id -g`"
     echo "Starting BgUtils POT Provider"
     bgutil-pot server >/tmp/bgutil-pot.log 2>&1 &
     exec python3 app/main.py

@@ -14,6 +14,7 @@ import logging
 import json
 import pathlib
 import re
+import shutil
 from watchfiles import DefaultFilter, Change, awatch
 
 from ytdl import DownloadQueueNotifier, DownloadQueue
@@ -421,6 +422,602 @@ if config.URL_PREFIX != '/':
     @routes.get(config.URL_PREFIX[:-1])
     def index_redirect_dir(request):
         return web.HTTPFound(config.URL_PREFIX)
+
+# Music Management API Endpoints
+def sanitize_folder_name(name: str) -> str:
+    """Sanitize folder name to prevent path traversal and invalid characters."""
+    # Remove path separators and dangerous characters
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', name)
+    # Remove leading/trailing spaces and dots
+    name = name.strip(' .')
+    # Replace multiple spaces with single space
+    name = re.sub(r'\s+', ' ', name)
+    return name
+
+def get_music_base_dir():
+    """Get the base music directory (DOWNLOAD_DIR)."""
+    return os.path.realpath(config.DOWNLOAD_DIR)
+
+def get_artist_dir(artist_name: str):
+    """Get the full path for an artist directory."""
+    base = get_music_base_dir()
+    safe_name = sanitize_folder_name(artist_name)
+    return os.path.join(base, safe_name)
+
+def get_album_dir(artist_name: str, album_name: str):
+    """Get the full path for an album directory."""
+    artist_path = get_artist_dir(artist_name)
+    safe_album = sanitize_folder_name(album_name)
+    return os.path.join(artist_path, safe_album)
+
+def get_singles_dir(artist_name: str):
+    """Get the full path for the singles directory of an artist."""
+    artist_path = get_artist_dir(artist_name)
+    return os.path.join(artist_path, 'Singles')
+
+def _count_artist_mp3_stats(artist_path: str):
+    """Return (file_count, total_size_bytes) for .mp3 files under artist_path.
+    Uses the same structure as get_artist_details: Singles + album dirs. No os.walk.
+    """
+    count = 0
+    total = 0
+    try:
+        if not os.path.isdir(artist_path):
+            return 0, 0
+        for item in os.listdir(artist_path):
+            if item.startswith('.') or item == '.metube':
+                continue
+            item_path = os.path.join(artist_path, item)
+            if not os.path.isdir(item_path):
+                continue
+            if item == 'Singles':
+                if os.path.exists(item_path):
+                    for fname in os.listdir(item_path):
+                        if fname.lower().endswith('.mp3'):
+                            try:
+                                full = os.path.join(item_path, fname)
+                                if os.path.isfile(full):
+                                    total += os.path.getsize(full)
+                                    count += 1
+                            except OSError:
+                                pass
+            else:
+                for fname in os.listdir(item_path):
+                    if fname.lower().endswith('.mp3'):
+                        try:
+                            full = os.path.join(item_path, fname)
+                            if os.path.isfile(full):
+                                total += os.path.getsize(full)
+                                count += 1
+                        except OSError:
+                            pass
+    except OSError as e:
+        log.debug("_count_artist_mp3_stats OSError for %r: %s", artist_path, e)
+    return count, total
+
+@routes.get(config.URL_PREFIX + 'api/artists')
+async def list_artists(request):
+    """List all artists (folders in music directory) with mp3 file count and total size."""
+    base = get_music_base_dir()
+    try:
+        if not os.path.exists(base):
+            os.makedirs(base, exist_ok=True)
+        artists = []
+        for item in os.listdir(base):
+            # Skip hidden directories and .metube state directory
+            if item.startswith('.') or item == '.metube':
+                continue
+            item_path = os.path.join(base, item)
+            if os.path.isdir(item_path):
+                file_count, total_size = _count_artist_mp3_stats(item_path)
+                artists.append({
+                    'id': item,
+                    'name': item,
+                    'path': item,
+                    'file_count': file_count,
+                    'total_size': total_size
+                })
+        artists.sort(key=lambda x: x['name'].lower())
+        return web.json_response(artists)
+    except Exception as e:
+        log.error(f"Error listing artists: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.post(config.URL_PREFIX + 'api/artists')
+async def create_artist(request):
+    """Create a new artist folder."""
+    try:
+        post = await request.json()
+        artist_name = post.get('name', '').strip()
+        if not artist_name:
+            raise web.HTTPBadRequest(reason='Artist name is required')
+        
+        safe_name = sanitize_folder_name(artist_name)
+        if not safe_name:
+            raise web.HTTPBadRequest(reason='Invalid artist name')
+        
+        artist_path = get_artist_dir(safe_name)
+        
+        # Check if artist already exists
+        if os.path.exists(artist_path):
+            return web.json_response({
+                'id': safe_name,
+                'name': safe_name,
+                'path': safe_name,
+                'message': 'Artist already exists'
+            })
+        
+        os.makedirs(artist_path, exist_ok=True)
+        log.info(f"Created artist folder: {artist_path}")
+        
+        return web.json_response({
+            'id': safe_name,
+            'name': safe_name,
+            'path': safe_name
+        })
+    except web.HTTPBadRequest:
+        raise
+    except Exception as e:
+        log.error(f"Error creating artist: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.put(config.URL_PREFIX + 'api/artists/{artist_id}')
+async def rename_artist(request):
+    """Rename an artist folder."""
+    try:
+        artist_id = request.match_info['artist_id']
+        post = await request.json()
+        new_name = post.get('name', '').strip()
+        
+        if not new_name:
+            raise web.HTTPBadRequest(reason='Artist name is required')
+        
+        safe_new_name = sanitize_folder_name(new_name)
+        if not safe_new_name:
+            raise web.HTTPBadRequest(reason='Invalid artist name')
+        
+        old_artist_path = get_artist_dir(artist_id)
+        new_artist_path = get_artist_dir(safe_new_name)
+        
+        # Security check: ensure paths are within music directory
+        base = get_music_base_dir()
+        real_old_path = os.path.realpath(old_artist_path)
+        real_new_path = os.path.realpath(new_artist_path)
+        if not real_old_path.startswith(base) or not real_new_path.startswith(base):
+            raise web.HTTPBadRequest(reason='Invalid artist path')
+        
+        if not os.path.exists(old_artist_path):
+            raise web.HTTPNotFound(reason='Artist not found')
+        
+        if os.path.exists(new_artist_path) and old_artist_path != new_artist_path:
+            raise web.HTTPBadRequest(reason='An artist with this name already exists')
+        
+        # Rename the folder
+        if old_artist_path != new_artist_path:
+            os.rename(old_artist_path, new_artist_path)
+            log.info(f"Renamed artist folder from {old_artist_path} to {new_artist_path}")
+        
+        return web.json_response({
+            'id': safe_new_name,
+            'name': safe_new_name,
+            'path': safe_new_name
+        })
+    except web.HTTPBadRequest:
+        raise
+    except web.HTTPNotFound:
+        raise
+    except Exception as e:
+        log.error(f"Error renaming artist: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.put(config.URL_PREFIX + 'api/artists/{artist_id}/albums/{album_id}')
+async def rename_album(request):
+    """Rename an album folder."""
+    try:
+        artist_id = request.match_info['artist_id']
+        album_id = request.match_info['album_id']
+        post = await request.json()
+        new_name = post.get('name', '').strip()
+
+        if not new_name:
+            raise web.HTTPBadRequest(reason='Album name is required')
+
+        safe_new_name = sanitize_folder_name(new_name)
+        if not safe_new_name:
+            raise web.HTTPBadRequest(reason='Invalid album name')
+
+        old_album_path = get_album_dir(artist_id, album_id)
+        new_album_path = get_album_dir(artist_id, safe_new_name)
+
+        base = get_music_base_dir()
+        real_old = os.path.realpath(old_album_path)
+        real_new = os.path.realpath(new_album_path)
+        if not real_old.startswith(base) or not real_new.startswith(base):
+            raise web.HTTPBadRequest(reason='Invalid album path')
+
+        if not os.path.exists(old_album_path):
+            raise web.HTTPNotFound(reason='Album not found')
+
+        if os.path.exists(new_album_path) and old_album_path != new_album_path:
+            raise web.HTTPBadRequest(reason='An album with this name already exists')
+
+        if old_album_path != new_album_path:
+            os.rename(old_album_path, new_album_path)
+            log.info(f"Renamed album from {old_album_path} to {new_album_path}")
+
+        return web.json_response({
+            'id': safe_new_name,
+            'name': safe_new_name,
+            'path': f"{artist_id}/{safe_new_name}"
+        })
+    except web.HTTPBadRequest:
+        raise
+    except web.HTTPNotFound:
+        raise
+    except Exception as e:
+        log.error(f"Error renaming album: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.delete(config.URL_PREFIX + 'api/artists/{artist_id}')
+async def delete_artist(request):
+    """Delete an artist folder."""
+    try:
+        artist_id = request.match_info['artist_id']
+        artist_path = get_artist_dir(artist_id)
+        
+        # Security check: ensure path is within music directory
+        base = get_music_base_dir()
+        real_artist_path = os.path.realpath(artist_path)
+        if not real_artist_path.startswith(base):
+            raise web.HTTPBadRequest(reason='Invalid artist path')
+        
+        if not os.path.exists(artist_path):
+            raise web.HTTPNotFound(reason='Artist not found')
+        
+        shutil.rmtree(artist_path)
+        log.info(f"Deleted artist folder: {artist_path}")
+        
+        return web.json_response({'status': 'ok'})
+    except web.HTTPBadRequest:
+        raise
+    except web.HTTPNotFound:
+        raise
+    except Exception as e:
+        log.error(f"Error deleting artist: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.delete(config.URL_PREFIX + 'api/artists/{artist_id}/albums/{album_id}/tracks/{track_id}')
+async def delete_track(request):
+    """Delete a track file from an album."""
+    try:
+        artist_id = request.match_info['artist_id']
+        album_id = request.match_info['album_id']
+        track_id = request.match_info['track_id']
+        
+        # Build the track file path
+        album_path = get_album_dir(artist_id, album_id)
+        track_path = os.path.join(album_path, track_id)
+        
+        # Security check: ensure path is within music directory
+        base = get_music_base_dir()
+        real_track_path = os.path.realpath(track_path)
+        if not real_track_path.startswith(base):
+            raise web.HTTPBadRequest(reason='Invalid track path')
+        
+        if not os.path.exists(track_path):
+            raise web.HTTPNotFound(reason='Track not found')
+        
+        if not os.path.isfile(track_path):
+            raise web.HTTPBadRequest(reason='Path is not a file')
+        
+        os.remove(track_path)
+        log.info(f"Deleted track file: {track_path}")
+        
+        return web.json_response({'status': 'ok'})
+    except web.HTTPBadRequest:
+        raise
+    except web.HTTPNotFound:
+        raise
+    except Exception as e:
+        log.error(f"Error deleting track: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.get(config.URL_PREFIX + 'api/artists/{artist_id}')
+async def get_artist_details(request):
+    """Get artist details including albums and singles."""
+    try:
+        artist_id = request.match_info['artist_id']
+        artist_path = get_artist_dir(artist_id)
+        
+        # Security check
+        base = get_music_base_dir()
+        real_artist_path = os.path.realpath(artist_path)
+        if not real_artist_path.startswith(base):
+            raise web.HTTPBadRequest(reason='Invalid artist path')
+        
+        if not os.path.exists(artist_path):
+            raise web.HTTPNotFound(reason='Artist not found')
+        
+        albums = []
+        singles_dir = get_singles_dir(artist_id)
+        singles = []
+        
+        # List all items in artist directory
+        for item in os.listdir(artist_path):
+            # Skip hidden directories and .metube
+            if item.startswith('.') or item == '.metube':
+                continue
+            item_path = os.path.join(artist_path, item)
+            if os.path.isdir(item_path):
+                if item == 'Singles':
+                    # List singles (mp3 only)
+                    if os.path.exists(singles_dir):
+                        for single_file in os.listdir(singles_dir):
+                            if not single_file.lower().endswith('.mp3'):
+                                continue
+                            single_path = os.path.join(singles_dir, single_file)
+                            if os.path.isfile(single_path):
+                                file_size = os.path.getsize(single_path)
+                                singles.append({
+                                    'id': single_file,
+                                    'name': single_file,
+                                    'path': f"{artist_id}/Singles/{single_file}",
+                                    'size': file_size
+                                })
+                else:
+                    # It's an album (mp3 only)
+                    tracks = []
+                    for album_item in os.listdir(item_path):
+                        if not album_item.lower().endswith('.mp3'):
+                            continue
+                        album_item_path = os.path.join(item_path, album_item)
+                        if os.path.isfile(album_item_path):
+                            file_size = os.path.getsize(album_item_path)
+                            tracks.append({
+                                'id': album_item,
+                                'name': album_item,
+                                'path': f"{artist_id}/{item}/{album_item}",
+                                'size': file_size
+                            })
+                    
+                    albums.append({
+                        'id': item,
+                        'name': item,
+                        'path': f"{artist_id}/{item}",
+                        'track_count': len(tracks),
+                        'tracks': tracks
+                    })
+        
+        albums.sort(key=lambda x: x['name'].lower())
+        singles.sort(key=lambda x: x['name'].lower())
+        
+        return web.json_response({
+            'id': artist_id,
+            'name': artist_id,
+            'albums': albums,
+            'singles': singles
+        })
+    except web.HTTPBadRequest:
+        raise
+    except web.HTTPNotFound:
+        raise
+    except Exception as e:
+        log.error(f"Error getting artist details: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.post(config.URL_PREFIX + 'api/download/album')
+async def download_album(request):
+    """Download a playlist as an album."""
+    try:
+        post = await request.json()
+        artist_id = post.get('artist_id', '').strip()
+        album_name = post.get('album_name', '').strip()
+        playlist_url = post.get('playlist_url', '').strip()
+        
+        if not artist_id or not album_name or not playlist_url:
+            raise web.HTTPBadRequest(reason='artist_id, album_name, and playlist_url are required')
+        
+        # Create album directory path
+        album_dir_path = get_album_dir(artist_id, album_name)
+        relative_folder = f"{artist_id}/{sanitize_folder_name(album_name)}"
+        
+        # Ensure artist directory exists
+        artist_path = get_artist_dir(artist_id)
+        if not os.path.exists(artist_path):
+            os.makedirs(artist_path, exist_ok=True)
+        
+        # Create album directory
+        os.makedirs(album_dir_path, exist_ok=True)
+        
+        # Add download with folder path
+        status = await dqueue.add(
+            playlist_url,
+            'audio',  # Always use audio quality for music
+            'mp3',    # Default format
+            relative_folder,
+            '',  # No custom name prefix
+            0,   # No playlist item limit
+            True,  # Auto start
+            False,  # No chapter splitting
+            config.OUTPUT_TEMPLATE_CHAPTER,
+            'srt',
+            'en',
+            'prefer_manual'
+        )
+        
+        return web.json_response(status)
+    except web.HTTPBadRequest:
+        raise
+    except Exception as e:
+        log.error(f"Error downloading album: {e}")
+        return web.json_response({'status': 'error', 'msg': str(e)}, status=500)
+
+@routes.post(config.URL_PREFIX + 'api/download/single')
+async def download_single(request):
+    """Download a single track."""
+    try:
+        post = await request.json()
+        artist_id = post.get('artist_id', '').strip()
+        video_url = post.get('video_url', '').strip()
+        
+        if not artist_id or not video_url:
+            raise web.HTTPBadRequest(reason='artist_id and video_url are required')
+        
+        # Create singles directory path
+        singles_dir_path = get_singles_dir(artist_id)
+        relative_folder = f"{artist_id}/Singles"
+        
+        # Ensure artist directory exists
+        artist_path = get_artist_dir(artist_id)
+        if not os.path.exists(artist_path):
+            os.makedirs(artist_path, exist_ok=True)
+        
+        # Create singles directory if it doesn't exist
+        os.makedirs(singles_dir_path, exist_ok=True)
+        
+        # Add download with folder path
+        status = await dqueue.add(
+            video_url,
+            'audio',  # Always use audio quality for music
+            'mp3',    # Default format
+            relative_folder,
+            '',  # No custom name prefix
+            0,   # No playlist item limit
+            True,  # Auto start
+            False,  # No chapter splitting
+            config.OUTPUT_TEMPLATE_CHAPTER,
+            'srt',
+            'en',
+            'prefer_manual'
+        )
+        
+        return web.json_response(status)
+    except web.HTTPBadRequest:
+        raise
+    except Exception as e:
+        log.error(f"Error downloading single: {e}")
+        return web.json_response({'status': 'error', 'msg': str(e)}, status=500)
+
+@routes.get(config.URL_PREFIX + 'api/config/accent-color')
+async def get_accent_color(request):
+    """Get the current accent color from config file."""
+    try:
+        config_file = os.path.join(config.STATE_DIR, 'accent-color.json')
+        default_color = '#0d6efd'  # Bootstrap's default blue
+        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    data = json.load(f)
+                    color = data.get('color', default_color)
+                    return web.json_response({'color': color})
+            except (json.JSONDecodeError, IOError) as e:
+                log.warning(f"Error reading accent color config: {e}")
+        
+        return web.json_response({'color': default_color})
+    except Exception as e:
+        log.error(f"Error getting accent color: {e}")
+        return web.json_response({'color': '#0d6efd'})
+
+@routes.put(config.URL_PREFIX + 'api/config/accent-color')
+async def set_accent_color(request):
+    """Set the accent color and save to config file."""
+    try:
+        post = await request.json()
+        color = post.get('color', '').strip()
+        
+        # Validate hex color format
+        if not color or not re.match(r'^#[0-9A-Fa-f]{6}$', color):
+            raise web.HTTPBadRequest(reason='Invalid color format. Must be a hex color (e.g., #0d6efd)')
+        
+        # Ensure STATE_DIR exists
+        os.makedirs(config.STATE_DIR, exist_ok=True)
+        
+        config_file = os.path.join(config.STATE_DIR, 'accent-color.json')
+        with open(config_file, 'w') as f:
+            json.dump({'color': color}, f)
+        
+        log.info(f"Accent color set to: {color}")
+        return web.json_response({'color': color})
+    except web.HTTPBadRequest:
+        raise
+    except Exception as e:
+        log.error(f"Error setting accent color: {e}")
+        return web.json_response({'error': str(e)}, status=500)
+
+@routes.get(config.URL_PREFIX + 'api/file-tree')
+async def get_file_tree(request):
+    """Get the entire file structure of the music directory."""
+    try:
+        base = get_music_base_dir()
+        if not os.path.exists(base):
+            os.makedirs(base, exist_ok=True)
+            return web.json_response({'artists': []})
+        
+        artists = []
+        for artist_name in os.listdir(base):
+            # Skip hidden directories and .metube state directory
+            if artist_name.startswith('.') or artist_name == '.metube':
+                continue
+            artist_path = os.path.join(base, artist_name)
+            if os.path.isdir(artist_path):
+                artist_data = {
+                    'id': artist_name,
+                    'name': artist_name,
+                    'albums': [],
+                    'singles': []
+                }
+                
+                for item in os.listdir(artist_path):
+                    # Skip hidden directories and .metube
+                    if item.startswith('.') or item == '.metube':
+                        continue
+                    item_path = os.path.join(artist_path, item)
+                    if os.path.isdir(item_path):
+                        if item == 'Singles':
+                            # List singles (mp3 only)
+                            for single_file in os.listdir(item_path):
+                                if not single_file.lower().endswith('.mp3'):
+                                    continue
+                                single_file_path = os.path.join(item_path, single_file)
+                                if os.path.isfile(single_file_path):
+                                    file_size = os.path.getsize(single_file_path)
+                                    artist_data['singles'].append({
+                                        'id': single_file,
+                                        'name': single_file,
+                                        'path': f"{artist_name}/Singles/{single_file}",
+                                        'size': file_size
+                                    })
+                        else:
+                            # It's an album (mp3 only)
+                            tracks = []
+                            for track_file in os.listdir(item_path):
+                                if not track_file.lower().endswith('.mp3'):
+                                    continue
+                                track_file_path = os.path.join(item_path, track_file)
+                                if os.path.isfile(track_file_path):
+                                    tracks.append({
+                                        'id': track_file,
+                                        'name': track_file,
+                                        'path': f"{artist_name}/{item}/{track_file}"
+                                    })
+                            
+                            artist_data['albums'].append({
+                                'id': item,
+                                'name': item,
+                                'path': f"{artist_name}/{item}",
+                                'tracks': tracks
+                            })
+                
+                artist_data['albums'].sort(key=lambda x: x['name'].lower())
+                artist_data['singles'].sort(key=lambda x: x['name'].lower())
+                artists.append(artist_data)
+        
+        artists.sort(key=lambda x: x['name'].lower())
+        return web.json_response({'artists': artists})
+    except Exception as e:
+        log.error(f"Error getting file tree: {e}")
+        return web.json_response({'error': str(e)}, status=500)
 
 routes.static(config.URL_PREFIX + 'download/', config.DOWNLOAD_DIR, show_index=config.DOWNLOAD_DIRS_INDEXABLE)
 routes.static(config.URL_PREFIX + 'audio_download/', config.AUDIO_DOWNLOAD_DIR, show_index=config.DOWNLOAD_DIRS_INDEXABLE)

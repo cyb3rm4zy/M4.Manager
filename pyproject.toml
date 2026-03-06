@@ -1,5 +1,5 @@
 [project]
-name = "metube"
+name = "m4-manager"
 version = "0.1.0"
 description = "Web GUI for youtube-dl (using yt-dlp) with playlist support"
 requires-python = ">=3.13"

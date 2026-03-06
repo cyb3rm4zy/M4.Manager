@@ -142,6 +142,7 @@ class DownloadInfo:
         subtitle_format="srt",
         subtitle_language="en",
         subtitle_mode="prefer_manual",
+        skip_playlist_template=False,
     ):
         self.id = id if len(custom_name_prefix) == 0 else f'{custom_name_prefix}.{id}'
         self.title = title if len(custom_name_prefix) == 0 else f'{custom_name_prefix}.{title}'
@@ -164,6 +165,7 @@ class DownloadInfo:
         self.subtitle_language = subtitle_language
         self.subtitle_mode = subtitle_mode
         self.subtitle_files = []
+        self.skip_playlist_template = skip_playlist_template
 
 class Download:
     manager = None
@@ -612,7 +614,8 @@ class DownloadQueue:
         output = self.config.OUTPUT_TEMPLATE if len(dl.custom_name_prefix) == 0 else f'{dl.custom_name_prefix}.{self.config.OUTPUT_TEMPLATE}'
         output_chapter = self.config.OUTPUT_TEMPLATE_CHAPTER
         entry = getattr(dl, 'entry', None)
-        if entry is not None and entry.get('playlist_index') is not None:
+        # Skip playlist template if skip_playlist_template is set (for album downloads where folder is already organized)
+        if entry is not None and entry.get('playlist_index') is not None and not getattr(dl, 'skip_playlist_template', False):
             if len(self.config.OUTPUT_TEMPLATE_PLAYLIST):
                 output = self.config.OUTPUT_TEMPLATE_PLAYLIST
             for property, value in entry.items():
@@ -735,6 +738,13 @@ class DownloadQueue:
                 log.info(f'Skipping canceled URL: {entry.get("title") or key}')
                 return {'status': 'ok'}
             if not self.queue.exists(key):
+                # Check if this is an album download (folder contains artist/album structure)
+                # For album downloads, skip the playlist template to avoid extra folder nesting
+                skip_playlist_template = False
+                if folder and '/' in folder:
+                    # If folder is already organized (e.g., "ArtistName/AlbumName"), skip playlist template
+                    skip_playlist_template = True
+                
                 dl = DownloadInfo(
                     entry['id'],
                     entry.get('title') or entry['id'],
@@ -751,6 +761,7 @@ class DownloadQueue:
                     subtitle_format,
                     subtitle_language,
                     subtitle_mode,
+                    skip_playlist_template,
                 )
                 await self.__add_download(dl, auto_start)
             return {'status': 'ok'}

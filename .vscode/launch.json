@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: MeTube",
+            "name": "Python: M4.Manager",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/app/main.py",

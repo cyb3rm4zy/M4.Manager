@@ -1,4 +1,43 @@
+# Git and version control
 .git
+.gitignore
+.github
+
+# Python dev
 .venv
-ui/.angular
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+
+# UI dev and build cache (we build inside Docker)
 ui/node_modules
+ui/.angular
+ui/dist
+ui/tmp
+ui/out-tsc
+ui/coverage
+ui/.sass-cache
+ui/connect.lock
+ui/typings
+
+# IDE and editor
+.idea
+.vscode
+.history
+*.sublime-workspace
+
+# Docs and dev-only (not needed in image)
+README-DEV.md
+README.metube.old
+.cursor
+
+# Local and secrets
+.env
+.env.local
+downloads/
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log

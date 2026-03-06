@@ -1,2 +1,12 @@
 export { MasterCheckboxComponent } from './master-checkbox.component';
 export { SlaveCheckboxComponent } from './slave-checkbox.component';
+export { SidebarComponent } from './sidebar.component';
+export { HomeComponent } from './home.component';
+export { ArtistDetailComponent } from './artist-detail.component';
+export { AlbumDetailComponent } from './album-detail.component';
+export { AddArtistModalComponent } from './add-artist-modal.component';
+export { DownloadAlbumModalComponent } from './download-album-modal.component';
+export { DownloadSingleModalComponent } from './download-single-modal.component';
+export { EditArtistModalComponent } from './edit-artist-modal.component';
+export { EditAlbumModalComponent } from './edit-album-modal.component';
+export { AccentColorModalComponent } from './accent-color-modal.component';

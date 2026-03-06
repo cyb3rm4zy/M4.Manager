@@ -6,13 +6,15 @@ on:
       - 'master'
 
 jobs:
-  dockerhub-build-push:
+  build-push:
     runs-on: ubuntu-latest
+    outputs:
+      has_dockerhub: ${{ steps.tags.outputs.has_dockerhub }}
     steps:
       -
         name: Get current date
         id: date
-        run: echo "::set-output name=date::$(date +'%Y.%m.%d')"
+        run: echo "date=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
       -
         name: Checkout
         uses: actions/checkout@v6
@@ -23,7 +25,8 @@ jobs:
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       -
-        name: Login to DockerHub
+        name: Login to Docker Hub
+        if: secrets.DOCKERHUB_USERNAME != ''
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -36,6 +39,25 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       -
+        name: Prepare tags
+        id: tags
+        run: |
+          DATE="${{ steps.date.outputs.date }}"
+          REPO="${{ github.repository }}"
+          TAGS="ghcr.io/${REPO}:latest
+          ghcr.io/${REPO}:${DATE}"
+          if [ -n "${{ secrets.DOCKERHUB_REPOSITORY }}" ]; then
+            echo "has_dockerhub=true" >> $GITHUB_OUTPUT
+            TAGS="${TAGS}
+          ${{ secrets.DOCKERHUB_REPOSITORY }}:latest
+          ${{ secrets.DOCKERHUB_REPOSITORY }}:${DATE}"
+          else
+            echo "has_dockerhub=false" >> $GITHUB_OUTPUT
+          fi
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      -
         name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -44,21 +66,18 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ steps.date.outputs.date }}
-          tags: |
-            ${{ secrets.DOCKERHUB_REPOSITORY }}:latest
-            ${{ secrets.DOCKERHUB_REPOSITORY }}:${{ steps.date.outputs.date }}
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.date.outputs.date }}
+          tags: ${{ steps.tags.outputs.tags }}
 
   dockerhub-sync-readme:
-    needs: dockerhub-build-push
+    needs: build-push
+    if: secrets.DOCKERHUB_REPOSITORY != ''
     runs-on: ubuntu-latest
     steps:
       - name: Sync README
         uses: docker://lsiodev/readme-sync:latest
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+          DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
           GIT_REPOSITORY: ${{ github.repository }}
           DOCKER_REPOSITORY: ${{ secrets.DOCKERHUB_REPOSITORY }}
           GIT_BRANCH: master
@@ -67,7 +86,7 @@ jobs:
           args: /opt/docker-readme-sync/sync
 
   create-release:
-    needs: dockerhub-build-push
+    needs: build-push
     runs-on: ubuntu-latest
     steps:
       - name: Get current date
@@ -114,6 +133,7 @@ jobs:
       - name: Generate release body
         id: release_body
         env:
+          HAS_DOCKERHUB: ${{ needs.build-push.outputs.has_dockerhub }}
           DOCKERHUB_REPO: ${{ secrets.DOCKERHUB_REPOSITORY }}
           GHCR_REPO: ghcr.io/${{ github.repository }}
           DATE: ${{ steps.date.outputs.date }}
@@ -125,10 +145,12 @@ jobs:
             echo ''
             echo 'Docker images have been built and pushed:'
             echo ''
-            echo '**Docker Hub:**'
-            echo "- \`${DOCKERHUB_REPO}:latest\`"
-            echo "- \`${DOCKERHUB_REPO}:${DATE}\`"
-            echo ''
+            if [ "$HAS_DOCKERHUB" = "true" ] && [ -n "$DOCKERHUB_REPO" ]; then
+              echo '**Docker Hub:**'
+              echo "- \`${DOCKERHUB_REPO}:latest\`"
+              echo "- \`${DOCKERHUB_REPO}:${DATE}\`"
+              echo ''
+            fi
             echo '**GitHub Container Registry:**'
             echo "- \`${GHCR_REPO}:latest\`"
             echo "- \`${GHCR_REPO}:${DATE}\`"
