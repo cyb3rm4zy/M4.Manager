@@ -10,6 +10,7 @@ export interface Artist {
   path?: string;
   file_count?: number;
   total_size?: number;
+  modified_at?: number;
   albums?: Album[];
   singles?: Single[];
 }

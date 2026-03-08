@@ -487,12 +487,17 @@ async def list_artists(request):
             item_path = os.path.join(base, item)
             if os.path.isdir(item_path):
                 file_count, total_size = _count_artist_mp3_stats(item_path)
+                try:
+                    modified_at = os.path.getmtime(item_path)
+                except OSError:
+                    modified_at = 0
                 artists.append({
                     'id': item,
                     'name': item,
                     'path': item,
                     'file_count': file_count,
-                    'total_size': total_size
+                    'total_size': total_size,
+                    'modified_at': modified_at
                 })
         artists.sort(key=lambda x: x['name'].lower())
         return web.json_response(artists)
