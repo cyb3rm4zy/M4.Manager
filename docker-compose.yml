@@ -1,6 +1,8 @@
 services:
   m4-manager:
-    image: 3rm4zy/m4.manager:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: m4-manager
     restart: unless-stopped
     ports:

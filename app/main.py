@@ -15,6 +15,7 @@ import json
 import pathlib
 import re
 import shutil
+import subprocess
 from watchfiles import DefaultFilter, Change, awatch
 
 from ytdl import DownloadQueueNotifier, DownloadQueue
@@ -72,6 +73,7 @@ class Config:
         'MAX_CONCURRENT_DOWNLOADS': 3,
         'LOGLEVEL': 'INFO',
         'ENABLE_ACCESSLOG': 'false',
+        'UPDATE_YTDL_TOKEN': '',
     }
 
     _BOOLEAN = ('DOWNLOAD_DIRS_INDEXABLE', 'CUSTOM_DIRS', 'CREATE_CUSTOM_DIRS', 'DELETE_FILE_ON_TRASHCAN', 'HTTPS', 'ENABLE_ACCESSLOG')
@@ -975,6 +977,37 @@ async def get_file_tree(request):
     except Exception as e:
         log.error(f"Error getting file tree: {e}")
         return web.json_response({'error': str(e)}, status=500)
+
+async def _update_yt_dlp_and_restart():
+    def _run_update():
+        try:
+            log.info("Updating yt-dlp via pip")
+            subprocess.run([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"], check=True)
+        except Exception as e:
+            log.error(f"Error updating yt-dlp: {e}")
+
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _run_update)
+    log.info("Restarting process after yt-dlp update")
+    os._exit(0)
+
+@routes.post(config.URL_PREFIX + 'api/admin/update-yt-dlp')
+async def update_yt_dlp(request):
+    token = getattr(config, 'UPDATE_YTDL_TOKEN', '')
+    if token:
+        provided = request.headers.get('X-Admin-Token', '')
+        if not provided and request.can_read_body:
+            try:
+                data = await request.json()
+                provided = str(data.get('token', ''))
+            except Exception:
+                provided = ''
+        if provided != token:
+            raise web.HTTPForbidden(reason='Invalid admin token')
+
+    asyncio.create_task(_update_yt_dlp_and_restart())
+    return web.json_response({'status': 'updating', 'message': 'yt-dlp update started; server will restart shortly'})
+
 
 routes.static(config.URL_PREFIX + 'download/', config.DOWNLOAD_DIR, show_index=config.DOWNLOAD_DIRS_INDEXABLE)
 routes.static(config.URL_PREFIX + 'audio_download/', config.AUDIO_DOWNLOAD_DIR, show_index=config.DOWNLOAD_DIRS_INDEXABLE)

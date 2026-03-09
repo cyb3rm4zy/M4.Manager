@@ -14,7 +14,7 @@ import { MusicService, Artist } from './services/music.service';
 import { DownloadsService } from './services/downloads.service';
 import { Themes } from './theme';
 import { Theme } from './interfaces';
-import { faSun, faMoon, faCircleHalfStroke, faCheck, faMusic, faPalette } from '@fortawesome/free-solid-svg-icons';
+import { faSun, faMoon, faCircleHalfStroke, faCheck, faMusic, faPalette, faRotate } from '@fortawesome/free-solid-svg-icons';
 import { HttpClient } from '@angular/common/http';
 
 @Component({
@@ -41,6 +41,7 @@ export class App implements OnInit {
   showHome = true;
   themes: Theme[] = Themes;
   activeTheme: Theme | undefined;
+  updatingYtDlp = false;
 
   faSun = faSun;
   faMoon = faMoon;
@@ -48,6 +49,7 @@ export class App implements OnInit {
   faCheck = faCheck;
   faMusic = faMusic;
   faPalette = faPalette;
+  faRotate = faRotate;
 
   constructor() {
     this.activeTheme = this.getPreferredTheme(this.cookieService);
@@ -128,6 +130,23 @@ export class App implements OnInit {
       },
       () => {}
     );
+  }
+
+  onUpdateYtDlp() {
+    if (this.updatingYtDlp) return;
+    if (!confirm('Update yt-dlp and restart the app? Any running downloads may be interrupted.')) return;
+    this.updatingYtDlp = true;
+    this.http.post<{ status: string; message?: string }>('api/admin/update-yt-dlp', {}).subscribe({
+      next: () => {
+        alert('Updating yt-dlp and restarting. The app will be unavailable briefly.');
+        setTimeout(() => window.location.reload(), 5000);
+      },
+      error: (error) => {
+        console.error('Error triggering yt-dlp update:', error);
+        alert('Failed to trigger yt-dlp update. See console for details.');
+        this.updatingYtDlp = false;
+      }
+    });
   }
 
   getPreferredTheme(cookieService: CookieService) {
