@@ -4,6 +4,10 @@ A music library manager with a web UI for downloading tracks and albums via [yt-
 
 Forked from [MeTube](https://github.com/alexta69/metube).
 
+>[!warning]
+>If you plan to expose m4.manager publically, ensure you have a proper authentication & security methods in place.
+>m4.manager does NOT have built in auth and was originally designed to be local and only public with a proxy authentication method (like Authentik, Authelia, or Keycloak).
+
 ---
 
 ## Run with Docker
@@ -31,10 +35,6 @@ services:
 ```
 
 Then open http://localhost:8081.
-
->[!note]
->If you plan to expose m4.manager publically, ensure you have a proper authentication & security methods in place.
->m4.manager does NOT have built in auth and was originally designed to be local and only public with a proxy authentication method (like Authentik, Authelia, or Keycloak).
 
 ---
 
