@@ -34,7 +34,7 @@ Then open http://localhost:8081.
 
 >[!note]
 >If you plan to expose m4.manager publically, ensure you have a proper authentication & security methods in place.
->m4.manager does NOT have built in auth and was originally designed to be local only and public with a proxy authentication method (like Authentik, Authelia, or Keycloak).
+>m4.manager does NOT have built in auth and was originally designed to be local and only public with a proxy authentication method (like Authentik, Authelia, or Keycloak).
 
 ---
 
