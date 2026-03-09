@@ -32,6 +32,10 @@ services:
 
 Then open http://localhost:8081.
 
+>[!note]
+>If you plan to expose m4.manager publically, ensure you have a proper authentication & security methods in place.
+>m4.manager does NOT have built in auth and was originally designed to be local only and public with a proxy authentication method (like Authentik, Authelia, or Keycloak).
+
 ---
 
 ## Configuration (environment variables)
@@ -40,44 +44,34 @@ Set these with `-e` when using `docker run`, or under `environment:` in docker-c
 
 ### Storage and directories
 
-| Variable                  | Description                                              | Default (Docker)         |
-|---------------------------|----------------------------------------------------------|--------------------------|
-| `DOWNLOAD_DIR`             | Music root (artists/albums live here)                   | `/downloads`             |
-| `AUDIO_DOWNLOAD_DIR`      | Audio-only downloads (if different)                     | same as `DOWNLOAD_DIR`   |
-| `STATE_DIR`               | Queue/state files (e.g. `.metube`)                      | `/downloads/.metube`     |
-| `TEMP_DIR`                | Temp files during download                              | `/downloads`             |
+- `DOWNLOAD_DIR` – Music root (artists/albums live here). **Default**: `/downloads`
+- `AUDIO_DOWNLOAD_DIR` – Audio-only downloads (if different). **Default**: same as `DOWNLOAD_DIR`
+- `STATE_DIR` – Queue/state files (e.g. `.metube`). **Default**: `/downloads/.metube`
+- `TEMP_DIR` – Temp files during download. **Default**: `/downloads`
 
 ### Web server
 
-| Variable                  | Description                                              | Default                 |
-|---------------------------|----------------------------------------------------------|--------------------------|
-| `HOST`                    | Bind address                                             | `0.0.0.0`                |
-| `PORT`                    | Listen port                                              | `8081`                   |
-| `URL_PREFIX`              | Base path (e.g. when behind a reverse proxy)             | `/`                      |
+- `HOST` – Bind address. **Default**: `0.0.0.0`
+- `PORT` – Listen port. **Default**: `8081`
+- `URL_PREFIX` – Base path (e.g. when behind a reverse proxy). **Default**: `/`
 
 ### Downloads (yt-dlp)
 
-| Variable                  | Description                                              | Default                 |
-|---------------------------|----------------------------------------------------------|--------------------------|
-| `MAX_CONCURRENT_DOWNLOADS`| Max simultaneous downloads                               | `3`                      |
-| `YTDL_OPTIONS`            | Extra yt-dlp options (JSON)                             | `{}`                     |
-| `YTDL_OPTIONS_FILE`       | Path to JSON file for options                            | (none)                   |
+- `MAX_CONCURRENT_DOWNLOADS` – Max simultaneous downloads. **Default**: `3`
+- `YTDL_OPTIONS` – Extra yt-dlp options (JSON). **Default**: `{}`
+- `YTDL_OPTIONS_FILE` – Path to JSON file for options. **Default**: (none)
 
 ### User and permissions (Docker)
 
-| Variable                  | Description                                              | Default                 |
-|---------------------------|----------------------------------------------------------|--------------------------|
-| `PUID`                    | Run as this user ID                                      | `1000`                   |
-| `PGID`                    | Run as this group ID                                     | `1000`                   |
-| `UMASK`                   | Umask for new files                                      | `022`                    |
-| `CHOWN_DIRS`              | Chown download/state dirs to PUID:PGID on start           | `true`                   |
+- `PUID` – Run as this user ID. **Default**: `1000`
+- `PGID` – Run as this group ID. **Default**: `1000`
+- `UMASK` – Umask for new files. **Default**: `022`
+- `CHOWN_DIRS` – Chown download/state dirs to PUID:PGID on start. **Default**: `true`
 
 ### Other
 
-| Variable                  | Description                                              | Default                 |
-|---------------------------|----------------------------------------------------------|--------------------------|
-| `LOGLEVEL`                | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`| `INFO`                   |
-| `DEFAULT_THEME`           | UI theme: `light`, `dark`, `auto`                         | `auto`                   |
+- `LOGLEVEL` – Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. **Default**: `INFO`
+- `DEFAULT_THEME` – UI theme: `light`, `dark`, `auto`. **Default**: `auto`
 
 For more options (output templates, HTTPS, public URLs, etc.) the behaviour matches [MeTube](https://github.com/alexta69/metube); see the MeTube wiki and docs for advanced configuration.
 
